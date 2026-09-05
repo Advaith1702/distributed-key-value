@@ -1,27 +1,20 @@
 package main
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"log"
+)
 
 func main() {
-	store := NewStore(3)
+	port := flag.Int("port", 8080, "TCP port to listen on")
+	capacity := flag.Int("capacity", 1000, "maximum number of keys the store holds before LRU eviction")
+	flag.Parse()
 
-	// Fill the store to capacity.
-	store.Set("a", "1")
-	store.Set("b", "2")
-	store.Set("c", "3")
+	store := NewStore(*capacity)
+	addr := fmt.Sprintf(":%d", *port)
 
-	// Touch "a" so it becomes the most-recently-used key, leaving "b" as
-	// the least-recently-used one (it hasn't been Get/Set since it was
-	// added, unlike "a" and "c").
-	store.Get("a")
-
-	// The store is at capacity, so this Set must evict the
-	// least-recently-used key: "b", not "a" (even though "a" was set
-	// before "b") because "a" was just touched above.
-	store.Set("d", "4")
-
-	for _, key := range []string{"a", "b", "c", "d"} {
-		value, ok := store.Get(key)
-		fmt.Printf("Get(%q) = %q, found=%v\n", key, value, ok)
+	if err := ListenAndServe(addr, store); err != nil {
+		log.Fatalf("server error: %v", err)
 	}
 }
