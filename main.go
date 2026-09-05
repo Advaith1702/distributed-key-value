@@ -3,26 +3,25 @@ package main
 import "fmt"
 
 func main() {
-	store := NewStore()
+	store := NewStore(3)
 
-	// Set a couple of keys.
-	store.Set("foo", "bar")
-	store.Set("baz", "qux")
+	// Fill the store to capacity.
+	store.Set("a", "1")
+	store.Set("b", "2")
+	store.Set("c", "3")
 
-	value, ok := store.Get("foo")
-	fmt.Printf("Get(%q) = %q, found=%v\n", "foo", value, ok)
+	// Touch "a" so it becomes the most-recently-used key, leaving "b" as
+	// the least-recently-used one (it hasn't been Get/Set since it was
+	// added, unlike "a" and "c").
+	store.Get("a")
 
-	// Overwrite an existing key.
-	store.Set("foo", "updated")
-	value, ok = store.Get("foo")
-	fmt.Printf("Get(%q) = %q, found=%v (after overwrite)\n", "foo", value, ok)
+	// The store is at capacity, so this Set must evict the
+	// least-recently-used key: "b", not "a" (even though "a" was set
+	// before "b") because "a" was just touched above.
+	store.Set("d", "4")
 
-	// Get a key that was never set.
-	value, ok = store.Get("missing")
-	fmt.Printf("Get(%q) = %q, found=%v\n", "missing", value, ok)
-
-	// Delete a key, then confirm it's gone.
-	store.Delete("baz")
-	value, ok = store.Get("baz")
-	fmt.Printf("Get(%q) = %q, found=%v (after delete)\n", "baz", value, ok)
+	for _, key := range []string{"a", "b", "c", "d"} {
+		value, ok := store.Get(key)
+		fmt.Printf("Get(%q) = %q, found=%v\n", key, value, ok)
+	}
 }
