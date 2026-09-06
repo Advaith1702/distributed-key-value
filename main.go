@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"strings"
 )
@@ -86,20 +87,10 @@ func clusterPeers(addr string, clusterList string) ([]string, error) {
 	// majority arithmetic would be off by one. That is a startup mistake
 	// worth refusing rather than debugging later from election logs.
 	if len(peers) > 0 && !found {
-		return nil, &clusterConfigError{addr: addr, cluster: clusterList}
+		return nil, fmt.Errorf(
+			"this node's -addr %s is not in -cluster %s; every node must appear in the cluster list, including itself",
+			addr, clusterList)
 	}
 
 	return peers, nil
-}
-
-// clusterConfigError reports a -cluster list that does not contain this
-// node's own -addr.
-type clusterConfigError struct {
-	addr    string
-	cluster string
-}
-
-func (e *clusterConfigError) Error() string {
-	return "this node's -addr " + e.addr + " is not in -cluster " + e.cluster +
-		"; every node must appear in the cluster list, including itself"
 }
