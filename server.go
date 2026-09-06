@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // errUnknownCommand is the single error response the protocol defines. It
@@ -200,7 +201,13 @@ func (s *Server) applyWrite(line string) (response string, applied bool) {
 		if len(parts) != 3 {
 			return errUnknownCommand, false
 		}
-		s.store.Set(parts[1], parts[2])
+
+		value, ttl, ok := parseSetOptions(parts[2])
+		if !ok {
+			return errUnknownCommand, false
+		}
+
+		s.store.Set(parts[1], value, ttl)
 		return "OK", true
 
 	case "DELETE":
@@ -213,6 +220,55 @@ func (s *Server) applyWrite(line string) (response string, applied bool) {
 	default:
 		return errUnknownCommand, false
 	}
+}
+
+// parseSetOptions splits the remainder of a SET line into the value and an
+// optional expiration, mirroring Redis's own "SET key value EX seconds"
+// syntax. Omitting EX means the key never expires, which is a ttl of 0.
+//
+// There is an ambiguity built into a line-based protocol here, and it is
+// worth being explicit about: a value whose last two words happen to be
+// "EX" and a number is indistinguishable from a value followed by an
+// expiration. `SET note remind me EX 60` stores "remind me" with a
+// 60-second expiration, not the literal text "remind me EX 60". Redis
+// avoids this by framing arguments in its wire format instead of splitting
+// on spaces; the trailing-option reading is the useful one here, and the
+// alternative would be quoting rules this protocol does not have.
+func parseSetOptions(rest string) (value string, ttl time.Duration, ok bool) {
+	fields := strings.Fields(rest)
+
+	// Fewer than three words cannot be "value EX seconds", so there is no
+	// option to read and the whole remainder is the value.
+	if len(fields) < 3 || !strings.EqualFold(fields[len(fields)-2], "EX") {
+		return rest, 0, true
+	}
+
+	seconds, err := strconv.Atoi(fields[len(fields)-1])
+	if err != nil {
+		// "EX" followed by something that isn't a number. Treating this
+		// as a plain value would silently store a line the client meant
+		// as an expiring write, so it is rejected instead.
+		return "", 0, false
+	}
+
+	// Redis rejects a non-positive EX, and so does this: zero already
+	// means "no expiration" internally, so accepting `EX 0` would quietly
+	// do the opposite of what a client asking for an expiry expects.
+	if seconds <= 0 {
+		return "", 0, false
+	}
+
+	// Trim the two option words off the right of the raw remainder rather
+	// than rejoining fields, so spacing inside the value survives intact.
+	trimmed := strings.TrimRight(rest, " ")
+	trimmed = strings.TrimRight(trimmed[:strings.LastIndex(trimmed, " ")], " ")
+	value = strings.TrimRight(trimmed[:strings.LastIndex(trimmed, " ")], " ")
+
+	if value == "" {
+		return "", 0, false
+	}
+
+	return value, time.Duration(seconds) * time.Second, true
 }
 
 // handleReplicate applies a write the leader forwarded. The line looks like
